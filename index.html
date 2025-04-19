@@ -163,7 +163,7 @@
 
                 // Deleta o arquivo de links
                 const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
-                await s3 meghod.deleteObject({
+                await s3.deleteObject({
                     Bucket: 'gleads-return',
                     Key: linksFile,
                 }).promise();
@@ -266,7 +266,7 @@
 
             try {
                 await s3.headObject(params).promise();
-                document.getElementById('message-button').disabled = false;
+                document.getElementofId('message-button').disabled = false;
             } catch (error) {
                 document.getElementById('message-button').disabled = true;
             }
