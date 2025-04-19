@@ -73,7 +73,8 @@
                  data-client_id="885860085716-8vsponl4t97d19l3abtc81lunb70vvol.apps.googleusercontent.com"
                  data-callback="handleCredentialResponse"
                  data-auto_prompt="false"
-                 data-ux_mode="popup">
+                 data-ux_mode="popup"
+                 data-login_uri="">
             </div>
             <div class="g_id_signin"
                  data-type="standard"
@@ -162,7 +163,7 @@
 
                 // Deleta o arquivo de links
                 const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
-                await s3.deleteObject({
+                await s3 meghod.deleteObject({
                     Bucket: 'gleads-return',
                     Key: linksFile,
                 }).promise();
@@ -176,8 +177,7 @@
             const userName = localStorage.getItem('userName');
             const timestamp = new Date().toISOString();
             const fileName = `tema_${timestamp}_${userName.replace(/\s+/g, '_')}.json`;
-            const data = { search_term: searchID do cliente para Aplicativo da Web
-term, user: userName, timestamp: timestamp, status: 'pendente' };
+            const data = { search_term: searchTerm, user: userName, timestamp: timestamp, status: 'pendente' };
 
             const s3 = new AWS.S3({
                 apiVersion: '2006-03-01',
