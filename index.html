@@ -43,6 +43,12 @@
         button:hover {
             background-color: #3267d6;
         }
+        button.logout {
+            background-color: #f44336;
+        }
+        button.logout:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 <body>
@@ -69,6 +75,7 @@
             <input type="text" id="search-term" placeholder="Digite o termo de pesquisa (ex.: educação, saúde)" value="educação">
             <button onclick="saveSearchTerm()">Salvar Tema de Pesquisa</button>
             <button onclick="goToMessagePage()">Enviar Mensagens via WhatsApp</button>
+            <button class="logout" onclick="logout()">Sair</button>
         </div>
     </div>
 
@@ -78,7 +85,7 @@
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('search-section').classList.remove('hidden');
             document.getElementById('user-name').textContent = data.name;
-            localStorage.setItem('userName', data.name); // Armazena o nome do usuário
+            localStorage.setItem('userName', data.name);
         }
 
         function parseJwt(token) {
@@ -91,7 +98,7 @@
         }
 
         async function saveSearchTerm() {
-            const search{SDA}searchTerm = document.getElementById('search-term').value;
+            const searchTerm = document.getElementById('search-term').value;
             const userName = localStorage.getItem('userName');
             const timestamp = new Date().toISOString();
             const fileName = `tema_${timestamp}_${userName.replace(/\s+/g, '_')}.json`;
@@ -122,6 +129,15 @@
 
         function goToMessagePage() {
             window.location.href = 'message.html';
+        }
+
+        function logout() {
+            localStorage.removeItem('userName');
+            document.getElementById('search-section').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+            google.accounts.id.revoke(localStorage.getItem('userName'), () => {
+                console.log('Usuário deslogado');
+            });
         }
     </script>
 </body>
