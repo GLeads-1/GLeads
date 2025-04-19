@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enviar Mensagens via WhatsApp</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+            max-width: 300px;
+            border-radius: 5px;
+            border: none;
+            background-color: #4285f4;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3267d6;
+        }
+        .school-item {
+            border-bottom: 1px solid #ccc;
+            padding: 10px 0;
+        }
+        .checkbox-container {
+            display: flex;
+            justify-content: space-between;
+            max-width: 300px;
+            margin: 10px auto;
+        }
+        .message-preview {
+            white-space: pre-wrap;
+            text-align: left;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Enviar Mensagens via WhatsApp</h1>
+        <p>Bem-vindo, <span id="user-name"></span>!</p>
+        <div id="loading" class="hidden">Carregando resultados...</div>
+        <div id="results-section" class="hidden">
+            <h3>Mensagem que será enviada:</h3>
+            <div class="message-preview" id="default-message"></div>
+            <h3>Lista de Escolas (<span id="sent-count">0</span> Enviados | <span id="no-whatsapp-count">0</span> Sem WhatsApp)</h3>
+            <div id="school-list"></div>
+            <h3>Contatos Já Contatados</h3>
+            <div id="sent-contacts">Nenhum contato foi marcado como enviado ainda.</div>
+            <h3>Contatos sem WhatsApp</h3>
+            <div id="no-whatsapp-contacts">Nenhum contato foi marcado como sem WhatsApp ainda.</div>
+        </div>
+        <div id="error-section" class="hidden"></div>
+    </div>
+
+    <script>
+        const defaultMessage = `Olá! Como vai?
+Sou Júlio Cesar, representante da SuperGeeks Maceió.
+*Estamos iniciando o processo de seleção de jovens talentos para a OBI (Olimpíada Brasileira de Informática)*.
+Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais importantes olimpíadas científicas do Brasil, por favor, confira o nosso material abaixo.`;
+
+        document.getElementById('default-message').textContent = defaultMessage;
+
+        function generateWhatsAppLink(phoneNumber, message) {
+            phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+            if (phoneNumber.length < 10) return null;
+            if (!phoneNumber.startsWith('55')) phoneNumber = '55' + phoneNumber;
+            const baseUrl = "https://api.whatsapp.com/send";
+            const encodedMessage = encodeURIComponent(message).replace(/%0A/g, '%0A').replace(/%20/g, '%20');
+            return `${baseUrl}?phone=${phoneNumber}&text=${encodedMessage}`;
+        }
+
+        // Carrega o estado dos checkboxes do localStorage
+        function loadStatus(user) {
+            const savedStatus = localStorage.getItem(`status_${user.replace(/\s+/g, '_')}`);
+            return savedStatus ? JSON.parse(savedStatus) : { sent_status: {}, no_whatsapp_status: {} };
+        }
+
+        // Salva o estado dos checkboxes no localStorage
+        function saveStatus(user, status) {
+            localStorage.setItem(`status_${user.replace(/\s+/g, '_')}`, JSON.stringify(status));
+        }
+
+        // Atualiza as contagens e listas de contatos
+        function updateStatusLists(user, status) {
+            const sentCount = Object.values(status.sent_status).filter(v => v).length;
+            const noWhatsAppCount = Object.values(status.no_whatsapp_status).filter(v => v).length;
+
+            document.getElementById('sent-count').textContent = sentCount;
+            document.getElementById('no-whatsapp-count').textContent = noWhatsAppCount;
+
+            const sentContactsDiv = document.getElementById('sent-contacts');
+            const sentContacts = Object.keys(status.sent_status).filter(key => status.sent_status[key]);
+            if (sentContacts.length > 0) {
+                sentContactsDiv.innerHTML = sentContacts.map(key => `<div>- ${key.split("_")[1]}</div>`).join('');
+            } else {
+                sentContactsDiv.textContent = "Nenhum contato foi marcado como enviado ainda.";
+            }
+
+            const noWhatsAppContactsDiv = document.getElementById('no-whatsapp-contacts');
+            const noWhatsAppContacts = Object.keys(status.no_whatsapp_status).filter(key => status.no_whatsapp_status[key]);
+            if (noWhatsAppContacts.length > 0) {
+                noWhatsAppContactsDiv.innerHTML = noWhatsAppContacts.map(key => `<div>- ${key.split("_")[2]}</div>`).join('');
+            } else {
+                noWhatsAppContactsDiv.textContent = "Nenhum contato foi marcado como sem WhatsApp ainda.";
+            }
+        }
+
+        // Carrega os resultados do usuário
+        async function loadResults(user) {
+            document.getElementById('loading').classList.remove('hidden');
+            try {
+                // Carrega o arquivo de links do usuário
+                const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
+                const linksResponse = await fetch(`https://resultados-bucket.s3.us-east-2.amazonaws.com/${linksFile}`);
+                if (!linksResponse.ok) {
+                    throw new Error('Não foi possível carregar os links dos resultados.');
+                }
+                const linksData = await linksResponse.json();
+
+                let allResults = [];
+                for (const link of linksData) {
+                    const resultResponse = await fetch(link.url);
+                    if (!resultResponse.ok) {
+                        console.error(`Erro ao carregar ${link.file_name}`);
+                        continue;
+                    }
+                    const result = await resultResponse.json();
+                    allResults = allResults.concat(result.dados);
+                }
+
+                if (allResults.length === 0) {
+                    throw new Error('Nenhum resultado encontrado para o usuário.');
+                }
+
+                // Carrega o estado dos checkboxes
+                const status = loadStatus(user);
+
+                // Exibe os resultados
+                const schoolList = document.getElementById('school-list');
+                allResults.forEach((school, index) => {
+                    const schoolDiv = document.createElement('div');
+                    schoolDiv.className = 'school-item';
+                    schoolDiv.innerHTML = `
+                        <div><strong>Escola:</strong> ${school.nome}</div>
+                        <div><strong>Telefone:</strong> ${school.phone}</div>
+                        <div class="checkbox-container">
+                            <label><input type="checkbox" id="sent_${school.nome}_${school.phone}" ${status.sent_status[`sent_${school.nome}_${school.phone}`] ? 'checked' : ''}> Mensagem Enviada</label>
+                            <label><input type="checkbox" id="no_whatsapp_${school.nome}_${school.phone}" ${status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] ? 'checked' : ''}> Contato sem WhatsApp</label>
+                        </div>
+                        <button onclick="sendMessage('${school.phone}', ${index})">Enviar mensagem para ${school.nome}</button>
+                    `;
+                    schoolList.appendChild(schoolDiv);
+
+                    // Adiciona eventos aos checkboxes
+                    document.getElementById(`sent_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
+                        status.sent_status[`sent_${school.nome}_${school.phone}`] = e.target.checked;
+                        saveStatus(user, status);
+                        updateStatusLists(user, status);
+                    });
+                    document.getElementById(`no_whatsapp_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
+                        status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] = e.target.checked;
+                        saveStatus(user, status);
+                        updateStatusLists(user, status);
+                    });
+                });
+
+                updateStatusLists(user, status);
+                document.getElementById('results-section').classList.remove('hidden');
+            } catch (error) {
+                document.getElementById('error-section').textContent = `Erro: ${error.message}`;
+                document.getElementById('error-section').classList.remove('hidden');
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // Função para enviar mensagem
+        function sendMessage(phone, index) {
+            const whatsappLink = generateWhatsAppLink(phone, defaultMessage);
+            if (whatsappLink) {
+                window.open(whatsappLink, '_blank');
+                alert(`Mensagem aberta para a escola!`);
+            } else {
+                alert(`Erro ao gerar link para a escola. Verifique o número.`);
+            }
+        }
+
+        // Carrega o nome do usuário do localStorage (definido no index.html)
+        const user = localStorage.getItem('userName');
+        if (user) {
+            document.getElementById('user-name').textContent = user;
+            loadResults(user);
+        } else {
+            document.getElementById('error-section').textContent = 'Por favor, faça login novamente.';
+            document.getElementById('error-section').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
