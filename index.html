@@ -176,7 +176,8 @@
             const userName = localStorage.getItem('userName');
             const timestamp = new Date().toISOString();
             const fileName = `tema_${timestamp}_${userName.replace(/\s+/g, '_')}.json`;
-            const data = { search_term: searchTerm, user: userName, timestamp: timestamp, status: 'pendente' };
+            const data = { search_term: searchID do cliente para Aplicativo da Web
+term, user: userName, timestamp: timestamp, status: 'pendente' };
 
             const s3 = new AWS.S3({
                 apiVersion: '2006-03-01',
