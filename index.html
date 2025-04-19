@@ -98,7 +98,7 @@
     <script>
         AWS.config.region = 'us-east-2';
         AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-            IdentityPoolId: 'us-east-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' // Substitua pelo seu Identity Pool ID
+            IdentityPoolId: 'us-east-2_2856uDEuR'
         });
 
         let latestThemeKey = null;
@@ -109,8 +109,26 @@
             document.getElementById('search-section').classList.remove('hidden');
             document.getElementById('user-name').textContent = data.name;
             localStorage.setItem('userName', data.name);
-            checkResultsAvailability(data.name);
-            checkThemeStatus(data.name);
+            localStorage.setItem('googleToken', response.credential);
+
+            // Configura as credenciais do Cognito com o token do Google
+            AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                IdentityPoolId: 'us-east-2_2856uDEuR',
+                Logins: {
+                    'accounts.google.com': response.credential
+                }
+            });
+
+            // Força a renovação das credenciais
+            AWS.config.credentials.get((err) => {
+                if (err) {
+                    console.error('Erro ao obter credenciais:', err);
+                    alert('Erro ao autenticar com o Cognito. Tente novamente.');
+                    return;
+                }
+                checkResultsAvailability(data.name);
+                checkThemeStatus(data.name);
+            });
         }
 
         function parseJwt(token) {
@@ -173,7 +191,6 @@
             };
 
             try {
-                // Deleta resultados antigos antes de enviar um novo tema
                 await deleteOldResults(userName);
                 await s3.upload(params).promise();
                 alert('Tema de pesquisa enviado para a máquina central com sucesso!');
@@ -261,6 +278,7 @@
 
         function logout() {
             localStorage.removeItem('userName');
+            localStorage.removeItem('googleToken');
             document.getElementById('search-section').classList.add('hidden');
             document.getElementById('login-section').classList.remove('hidden');
             google.accounts.id.revoke(localStorage.getItem('userName'), () => {
