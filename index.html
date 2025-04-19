@@ -49,6 +49,20 @@
         button.logout:hover {
             background-color: #d32f2f;
         }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status-pendente {
+            color: orange;
+        }
+        .status-concluido {
+            color: green;
+        }
     </style>
 </head>
 <body>
@@ -59,7 +73,8 @@
                  data-client_id="885860085716-8vsponl4t97d19l3abtc81lunb70vvol.apps.googleusercontent.com"
                  data-callback="handleCredentialResponse"
                  data-auto_prompt="false"
-                 data-redirect_uri="https://gleads-1.github.io/GLeads/">
+                 data-redirect_uri="https://gleads-1.github.io/GLeads/"
+                 data-ux_mode="redirect">
             </div>
             <div class="g_id_signin"
                  data-type="standard"
@@ -74,18 +89,28 @@
             <p>Bem-vindo, <span id="user-name"></span>!</p>
             <input type="text" id="search-term" placeholder="Digite o termo de pesquisa (ex.: educação, saúde)" value="educação">
             <button onclick="saveSearchTerm()">Salvar Tema de Pesquisa</button>
-            <button onclick="goToMessagePage()">Enviar Mensagens via WhatsApp</button>
+            <div id="status-message" class="status hidden"></div>
+            <button id="message-button" onclick="goToMessagePage()" disabled>Enviar Mensagens via WhatsApp</button>
             <button class="logout" onclick="logout()">Sair</button>
         </div>
     </div>
 
     <script>
+        AWS.config.region = 'us-east-2';
+        AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+            IdentityPoolId: 'us-east-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' // Substitua pelo seu Identity Pool ID
+        });
+
+        let latestThemeKey = null;
+
         function handleCredentialResponse(response) {
             const data = parseJwt(response.credential);
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('search-section').classList.remove('hidden');
             document.getElementById('user-name').textContent = data.name;
             localStorage.setItem('userName', data.name);
+            checkResultsAvailability(data.name);
+            checkThemeStatus(data.name);
         }
 
         function parseJwt(token) {
@@ -97,16 +122,44 @@
             return JSON.parse(jsonPayload);
         }
 
+        async function deleteOldResults(user) {
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
+            try {
+                const response = await s3.listObjectsV2({
+                    Bucket: 'gleads-return',
+                    Prefix: `resultado_`,
+                }).promise();
+
+                if (!response.Contents) return;
+
+                const userResults = response.Contents.filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')));
+                for (const obj of userResults) {
+                    await s3.deleteObject({
+                        Bucket: 'gleads-return',
+                        Key: obj.Key,
+                    }).promise();
+                }
+
+                // Deleta o arquivo de links
+                const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
+                await s3.deleteObject({
+                    Bucket: 'gleads-return',
+                    Key: linksFile,
+                }).promise();
+            } catch (error) {
+                console.error('Erro ao deletar resultados antigos:', error);
+            }
+        }
+
         async function saveSearchTerm() {
             const searchTerm = document.getElementById('search-term').value;
             const userName = localStorage.getItem('userName');
             const timestamp = new Date().toISOString();
             const fileName = `tema_${timestamp}_${userName.replace(/\s+/g, '_')}.json`;
             const data = { search_term: searchTerm, user: userName, timestamp: timestamp, status: 'pendente' };
-
-            AWS.config.update({
-                region: 'us-east-2',
-            });
 
             const s3 = new AWS.S3({
                 apiVersion: '2006-03-01',
@@ -120,10 +173,85 @@
             };
 
             try {
+                // Deleta resultados antigos antes de enviar um novo tema
+                await deleteOldResults(userName);
                 await s3.upload(params).promise();
                 alert('Tema de pesquisa enviado para a máquina central com sucesso!');
+                latestThemeKey = fileName;
+                checkThemeStatus(userName);
             } catch (error) {
                 alert('Erro ao enviar o tema de pesquisa: ' + error.message);
+            }
+        }
+
+        async function checkThemeStatus(user) {
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
+            const statusMessage = document.getElementById('status-message');
+            statusMessage.classList.remove('hidden');
+
+            try {
+                const response = await s3.listObjectsV2({
+                    Bucket: 'temas-bucket',
+                    Prefix: `tema_`,
+                }).promise();
+
+                if (!response.Contents || response.Contents.length === 0) {
+                    statusMessage.textContent = 'Nenhum tema encontrado.';
+                    statusMessage.className = 'status';
+                    return;
+                }
+
+                const userThemes = response.Contents
+                    .filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')))
+                    .sort((a, b) => b.Key.localeCompare(a.Key));
+
+                if (userThemes.length === 0) {
+                    statusMessage.textContent = 'Nenhum tema encontrado.';
+                    statusMessage.className = 'status';
+                    return;
+                }
+
+                const latestTheme = userThemes[0];
+                const themeData = await s3.getObject({
+                    Bucket: 'temas-bucket',
+                    Key: latestTheme.Key,
+                }).promise();
+                const theme = JSON.parse(themeData.Body.toString());
+
+                if (theme.status === 'pendente') {
+                    statusMessage.textContent = 'Aguardando processamento...';
+                    statusMessage.className = 'status status-pendente';
+                    setTimeout(() => checkThemeStatus(user), 30000);
+                } else if (theme.status === 'concluído') {
+                    statusMessage.textContent = 'Resultados prontos!';
+                    statusMessage.className = 'status status-concluido';
+                    checkResultsAvailability(user);
+                }
+            } catch (error) {
+                statusMessage.textContent = 'Erro ao verificar o status do tema.';
+                statusMessage.className = 'status';
+            }
+        }
+
+        async function checkResultsAvailability(user) {
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
+            const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
+            const params = {
+                Bucket: 'gleads-return',
+                Key: linksFile
+            };
+
+            try {
+                await s3.headObject(params).promise();
+                document.getElementById('message-button').disabled = false;
+            } catch (error) {
+                document.getElementById('message-button').disabled = true;
             }
         }
 
