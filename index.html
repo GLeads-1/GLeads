@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspagem de Dados do Google Maps</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .hidden {
+            display: none;
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+            max-width: 300px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3267d6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Raspagem de Dados do Google Maps</h1>
+        <div id="login-section">
+            <div id="g_id_onload"
+                 data-client_id="885860085716-pb7j5h2jrt2kcn5c888nfi1uv6bm6732.apps.googleusercontent.com"
+                 data-callback="handleCredentialResponse"
+                 data-auto_prompt="false"
+                 data-redirect_uri="https://SEU_USUARIO.github.io/google-maps-scraper/">
+            </div>
+            <div class="g_id_signin"
+                 data-type="standard"
+                 data-size="large"
+                 data-theme="outline"
+                 data-text="sign_in_with"
+                 data-shape="rectangular"
+                 data-logo_alignment="left">
+            </div>
+        </div>
+        <div id="search-section" class="hidden">
+            <p>Bem-vindo, <span id="user-name"></span>!</p>
+            <input type="text" id="search-term" placeholder="Digite o termo de pesquisa (ex.: educação, saúde)" value="educação">
+            <button onclick="saveSearchTerm()">Salvar Tema de Pesquisa</button>
+        </div>
+    </div>
+
+    <script>
+        function handleCredentialResponse(response) {
+            const data = parseJwt(response.credential);
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('search-section').classList.remove('hidden');
+            document.getElementById('user-name').textContent = data.name;
+        }
+
+        function parseJwt(token) {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        }
+
+        function saveSearchTerm() {
+            const searchTerm = document.getElementById('search-term').value;
+            const data = { search_term: searchTerm };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'search_term.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            alert('Tema de pesquisa salvo como search_term.json!');
+        }
+    </script>
+</body>
+</html>
