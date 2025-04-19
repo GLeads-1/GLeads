@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enviar Mensagens via WhatsApp</title>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1417.0.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -58,6 +59,9 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+        .error {
+            color: red;
+        }
     </style>
 </head>
 <body>
@@ -75,10 +79,16 @@
             <h3>Contatos sem WhatsApp</h3>
             <div id="no-whatsapp-contacts">Nenhum contato foi marcado como sem WhatsApp ainda.</div>
         </div>
-        <div id="error-section" class="hidden"></div>
+        <div id="error-section" class="error hidden"></div>
+        <button id="retry-button" class="hidden" onclick="loadResults(user)">Tentar Novamente</button>
     </div>
 
     <script>
+        AWS.config.region = 'us-east-2';
+        AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+            IdentityPoolId: 'us-east-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' // Substitua pelo seu Identity Pool ID
+        });
+
         const defaultMessage = `Olá! Como vai?
 Sou Júlio Cesar, representante da SuperGeeks Maceió.
 *Estamos iniciando o processo de seleção de jovens talentos para a OBI (Olimpíada Brasileira de Informática)*.
@@ -86,8 +96,10 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
 
         document.getElementById('default-message').textContent = defaultMessage;
 
+        let user;
+
         function generateWhatsAppLink(phoneNumber, message) {
-            phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+            phoneNumber = phoneNumber.next(/[^0-9]/g, '');
             if (phoneNumber.length < 10) return null;
             if (!phoneNumber.startsWith('55')) phoneNumber = '55' + phoneNumber;
             const baseUrl = "https://api.whatsapp.com/send";
@@ -95,18 +107,15 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
             return `${baseUrl}?phone=${phoneNumber}&text=${encodedMessage}`;
         }
 
-        // Carrega o estado dos checkboxes do localStorage
         function loadStatus(user) {
             const savedStatus = localStorage.getItem(`status_${user.replace(/\s+/g, '_')}`);
             return savedStatus ? JSON.parse(savedStatus) : { sent_status: {}, no_whatsapp_status: {} };
         }
 
-        // Salva o estado dos checkboxes no localStorage
         function saveStatus(user, status) {
             localStorage.setItem(`status_${user.replace(/\s+/g, '_')}`, JSON.stringify(status));
         }
 
-        // Atualiza as contagens e listas de contatos
         function updateStatusLists(user, status) {
             const sentCount = Object.values(status.sent_status).filter(v => v).length;
             const noWhatsAppCount = Object.values(status.no_whatsapp_status).filter(v => v).length;
@@ -131,23 +140,43 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
             }
         }
 
-        // Carrega os resultados do usuário
         async function loadResults(user) {
             document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('error-section').classList.add('hidden');
+            document.getElementById('retry-button').classList.add('hidden');
+
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
             try {
-                // Carrega o arquivo de links do usuário
-                const linksFile = `links_${user.replace(/\s+/g, '_')}.json`;
-                const linksResponse = await fetch(`https://resultados-bucket.s3.us-east-2.amazonaws.com/${linksFile}`);
-                if (!linksResponse.ok) {
-                    throw new Error('Não foi possível carregar os links dos resultados.');
+                const response = await s3.listObjectsV2({
+                    Bucket: 'gleads-return',
+                    Prefix: `resultado_`,
+                }).promise();
+
+                if (!response.Contents || response.Contents.length === 0) {
+                    throw new Error('Nenhum resultado encontrado.');
                 }
-                const linksData = await linksResponse.json();
+
+                const userResults = response.Contents
+                    .filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')))
+                    .sort((a, b) => b.Key.localeCompare(a.Key));
+
+                if (userResults.length === 0) {
+                    throw new Error('Nenhum resultado encontrado para o usuário.');
+                }
 
                 let allResults = [];
-                for (const link of linksData) {
-                    const resultResponse = await fetch(link.url);
+                for (const obj of userResults) {
+                    const presignedUrl = s3.getSignedUrl('getObject', {
+                        Bucket: 'gleads-return',
+                        Key: obj.Key,
+                        Expires: 3600 // 1 hora
+                    });
+                    const resultResponse = await fetch(presignedUrl);
                     if (!resultResponse.ok) {
-                        console.error(`Erro ao carregar ${link.file_name}`);
+                        console.error(`Erro ao carregar ${obj.Key}`);
                         continue;
                     }
                     const result = await resultResponse.json();
@@ -158,11 +187,9 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
                     throw new Error('Nenhum resultado encontrado para o usuário.');
                 }
 
-                // Carrega o estado dos checkboxes
                 const status = loadStatus(user);
-
-                // Exibe os resultados
                 const schoolList = document.getElementById('school-list');
+                schoolList.innerHTML = '';
                 allResults.forEach((school, index) => {
                     const schoolDiv = document.createElement('div');
                     schoolDiv.className = 'school-item';
@@ -177,7 +204,6 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
                     `;
                     schoolList.appendChild(schoolDiv);
 
-                    // Adiciona eventos aos checkboxes
                     document.getElementById(`sent_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
                         status.sent_status[`sent_${school.nome}_${school.phone}`] = e.target.checked;
                         saveStatus(user, status);
@@ -195,12 +221,12 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
             } catch (error) {
                 document.getElementById('error-section').textContent = `Erro: ${error.message}`;
                 document.getElementById('error-section').classList.remove('hidden');
+                document.getElementById('retry-button').classList.remove('hidden');
             } finally {
                 document.getElementById('loading').classList.add('hidden');
             }
         }
 
-        // Função para enviar mensagem
         function sendMessage(phone, index) {
             const whatsappLink = generateWhatsAppLink(phone, defaultMessage);
             if (whatsappLink) {
@@ -211,8 +237,7 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
             }
         }
 
-        // Carrega o nome do usuário do localStorage (definido no index.html)
-        const user = localStorage.getItem('userName');
+        user = localStorage.getItem('userName');
         if (user) {
             document.getElementById('user-name').textContent = user;
             loadResults(user);
