@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raspagem de Dados do Google Maps</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1417.0.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -67,6 +68,7 @@
             <p>Bem-vindo, <span id="user-name"></span>!</p>
             <input type="text" id="search-term" placeholder="Digite o termo de pesquisa (ex.: educação, saúde)" value="educação">
             <button onclick="saveSearchTerm()">Salvar Tema de Pesquisa</button>
+            <button onclick="goToMessagePage()">Enviar Mensagens via WhatsApp</button>
         </div>
     </div>
 
@@ -76,6 +78,7 @@
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('search-section').classList.remove('hidden');
             document.getElementById('user-name').textContent = data.name;
+            localStorage.setItem('userName', data.name); // Armazena o nome do usuário
         }
 
         function parseJwt(token) {
@@ -87,17 +90,38 @@
             return JSON.parse(jsonPayload);
         }
 
-        function saveSearchTerm() {
-            const searchTerm = document.getElementById('search-term').value;
-            const data = { search_term: searchTerm };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'search_term.json';
-            a.click();
-            URL.revokeObjectURL(url);
-            alert('Tema de pesquisa salvo como search_term.json!');
+        async function saveSearchTerm() {
+            const search{SDA}searchTerm = document.getElementById('search-term').value;
+            const userName = localStorage.getItem('userName');
+            const timestamp = new Date().toISOString();
+            const fileName = `tema_${timestamp}_${userName.replace(/\s+/g, '_')}.json`;
+            const data = { search_term: searchTerm, user: userName, timestamp: timestamp, status: 'pendente' };
+
+            AWS.config.update({
+                region: 'us-east-2',
+            });
+
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
+            const params = {
+                Bucket: 'temas-bucket',
+                Key: fileName,
+                Body: JSON.stringify(data, null, 2),
+                ContentType: 'application/json'
+            };
+
+            try {
+                await s3.upload(params).promise();
+                alert('Tema de pesquisa enviado para a máquina central com sucesso!');
+            } catch (error) {
+                alert('Erro ao enviar o tema de pesquisa: ' + error.message);
+            }
+        }
+
+        function goToMessagePage() {
+            window.location.href = 'message.html';
         }
     </script>
 </body>
