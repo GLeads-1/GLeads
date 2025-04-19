@@ -85,9 +85,20 @@
 
     <script>
         AWS.config.region = 'us-east-2';
-        AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-            IdentityPoolId: 'us-east-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' // Substitua pelo seu Identity Pool ID
-        });
+
+        const googleToken = localStorage.getItem('googleToken');
+        if (googleToken) {
+            AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                IdentityPoolId: 'us-east-2_2856uDEuR',
+                Logins: {
+                    'accounts.google.com': googleToken
+                }
+            });
+        } else {
+            document.getElementById('error-section').textContent = 'Por favor, faça login novamente.';
+            document.getElementById('error-section').classList.remove('hidden');
+            throw new Error('Token do Google não encontrado.');
+        }
 
         const defaultMessage = `Olá! Como vai?
 Sou Júlio Cesar, representante da SuperGeeks Maceió.
@@ -99,7 +110,7 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
         let user;
 
         function generateWhatsAppLink(phoneNumber, message) {
-            phoneNumber = phoneNumber.next(/[^0-9]/g, '');
+            phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
             if (phoneNumber.length < 10) return null;
             if (!phoneNumber.startsWith('55')) phoneNumber = '55' + phoneNumber;
             const baseUrl = "https://api.whatsapp.com/send";
@@ -145,86 +156,97 @@ Se a sua escola tem interesse em representar o estado de Alagoas em uma das mais
             document.getElementById('error-section').classList.add('hidden');
             document.getElementById('retry-button').classList.add('hidden');
 
-            const s3 = new AWS.S3({
-                apiVersion: '2006-03-01',
-            });
-
-            try {
-                const response = await s3.listObjectsV2({
-                    Bucket: 'gleads-return',
-                    Prefix: `resultado_`,
-                }).promise();
-
-                if (!response.Contents || response.Contents.length === 0) {
-                    throw new Error('Nenhum resultado encontrado.');
+            AWS.config.credentials.get(async (err) => {
+                if (err) {
+                    console.error('Erro ao obter credenciais:', err);
+                    document.getElementById('error-section').textContent = 'Erro ao autenticar com o Cognito.';
+                    document.getElementById('error-section').classList.remove('hidden');
+                    document.getElementById('retry-button').classList.remove('hidden');
+                    document.getElementById('loading').classList.add('hidden');
+                    return;
                 }
 
-                const userResults = response.Contents
-                    .filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')))
-                    .sort((a, b) => b.Key.localeCompare(a.Key));
-
-                if (userResults.length === 0) {
-                    throw new Error('Nenhum resultado encontrado para o usuário.');
-                }
-
-                let allResults = [];
-                for (const obj of userResults) {
-                    const presignedUrl = s3.getSignedUrl('getObject', {
-                        Bucket: 'gleads-return',
-                        Key: obj.Key,
-                        Expires: 3600 // 1 hora
-                    });
-                    const resultResponse = await fetch(presignedUrl);
-                    if (!resultResponse.ok) {
-                        console.error(`Erro ao carregar ${obj.Key}`);
-                        continue;
-                    }
-                    const result = await resultResponse.json();
-                    allResults = allResults.concat(result.dados);
-                }
-
-                if (allResults.length === 0) {
-                    throw new Error('Nenhum resultado encontrado para o usuário.');
-                }
-
-                const status = loadStatus(user);
-                const schoolList = document.getElementById('school-list');
-                schoolList.innerHTML = '';
-                allResults.forEach((school, index) => {
-                    const schoolDiv = document.createElement('div');
-                    schoolDiv.className = 'school-item';
-                    schoolDiv.innerHTML = `
-                        <div><strong>Escola:</strong> ${school.nome}</div>
-                        <div><strong>Telefone:</strong> ${school.phone}</div>
-                        <div class="checkbox-container">
-                            <label><input type="checkbox" id="sent_${school.nome}_${school.phone}" ${status.sent_status[`sent_${school.nome}_${school.phone}`] ? 'checked' : ''}> Mensagem Enviada</label>
-                            <label><input type="checkbox" id="no_whatsapp_${school.nome}_${school.phone}" ${status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] ? 'checked' : ''}> Contato sem WhatsApp</label>
-                        </div>
-                        <button onclick="sendMessage('${school.phone}', ${index})">Enviar mensagem para ${school.nome}</button>
-                    `;
-                    schoolList.appendChild(schoolDiv);
-
-                    document.getElementById(`sent_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
-                        status.sent_status[`sent_${school.nome}_${school.phone}`] = e.target.checked;
-                        saveStatus(user, status);
-                        updateStatusLists(user, status);
-                    });
-                    document.getElementById(`no_whatsapp_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
-                        status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] = e.target.checked;
-                        saveStatus(user, status);
-                        updateStatusLists(user, status);
-                    });
+                const s3 = new AWS.S3({
+                    apiVersion: '2006-03-01',
                 });
 
-                updateStatusLists(user, status);
-                document.getElementById('results-section').classList.remove('hidden');
-            } catch (error) {
-                document.getElementById('error-section').textContent = `Erro: ${error.message}`;
-                document.getElementById('error-section').classList.remove('hidden');
-                document.getElementById('retry-button').classList.remove('hidden');
-            } finally {
-                document.getElementById('loading').classList.add('hidden');
-            }
+                try {
+                    const response = await s3.listObjectsV2({
+                        Bucket: 'gleads-return',
+                        Prefix: `resultado_`,
+                    }).promise();
+
+                    if (!response.Contents || response.Contents.length === 0) {
+                        throw new Error('Nenhum resultado encontrado.');
+                    }
+
+                    const userResults = response.Contents
+                        .filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')))
+                        .sort((a, b) => b.Key.localeCompare(a.Key));
+
+                    if (userResults.length === 0) {
+                        throw new Error('Nenhum resultado encontrado para o usuário.');
+                    }
+
+                    let allResults = [];
+                    for (const obj of userResults) {
+                        const presignedUrl = s3.getSignedUrl('getObject', {
+                            Bucket: 'gleads-return',
+                            Key: obj.Key,
+                            Expires: 3600 // 1 hora
+                        });
+                        const resultResponse = await fetch(presignedUrl);
+                        if (!resultResponse.ok) {
+                            console.error(`Erro ao carregar ${obj.Key}`);
+                            continue;
+                        }
+                        const result = await resultResponse.json();
+                        allResults = allResults.concat(result.dados);
+                    }
+
+                    if (allResults.length === 0) {
+                        throw new Error('Nenhum resultado encontrado para o usuário.');
+                    }
+
+                    const status = loadStatus(user);
+                    const schoolList = document.getElementById('school-list');
+                    schoolList.innerHTML = '';
+                    allResults.forEach((school, index) => {
+                        const schoolDiv = document.createElement('div');
+                        schoolDiv.className = 'school-item';
+                        schoolDiv.innerHTML = `
+                            <div><strong>Escola:</strong> ${school.nome}</div>
+                            <div><strong>Telefone:</strong> ${school.phone}</div>
+                            <div class="checkbox-container">
+                                <label><input type="checkbox" id="sent_${school.nome}_${school.phone}" ${status.sent_status[`sent_${school.nome}_${school.phone}`] ? 'checked' : ''}> Mensagem Enviada</label>
+                                <label><input type="checkbox" id="no_whatsapp_${school.nome}_${school.phone}" ${status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] ? 'checked' : ''}> Contato sem WhatsApp</label>
+                            </div>
+                            <button onclick="sendMessage('${school.phone}', ${index})">Enviar mensagem para ${school.nome}</button>
+                        `;
+                        schoolList.appendChild(schoolDiv);
+
+                        document.getElementById(`sent_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
+                            status.sent_status[`sent_${school.nome}_${school.phone}`] = e.target.checked;
+                            saveStatus(user, status);
+                            updateStatusLists(user, status);
+                        });
+                        document.getElementById(`no_whatsapp_${school.nome}_${school.phone}`).addEventListener('change', (e) => {
+                            status.no_whatsapp_status[`no_whatsapp_${school.nome}_${school.phone}`] = e.target.checked;
+                            saveStatus(user, status);
+                            updateStatusLists(user, status);
+                        });
+                    });
+
+                    updateStatusLists(user, status);
+                    document.getElementById('results-section').classList.remove('hidden');
+                } catch (error) {
+                    document.getElementById('error-section').textContent = `Erro: ${error.message}`;
+                    document.getElementById('error-section').classList.remove('hidden');
+                    document.getElementById('retry-button').classList.remove('hidden');
+                } finally {
+                    document.getElementById('loading').classList.add('hidden');
+                }
+            });
         }
 
         function sendMessage(phone, index) {
