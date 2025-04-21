@@ -145,6 +145,8 @@
                 apiVersion: '2006-03-01',
             });
 
+            const statusMessage = document.getElementById('status-message');
+
             try {
                 const response = await s3.listObjectsV2({
                     Bucket: 'gleads-return',
@@ -168,6 +170,9 @@
                     Key: linksFile,
                 }).promise();
             } catch (error) {
+                statusMessage.textContent = `Erro ao deletar resultados antigos: ${error.message}`;
+                statusMessage.classList.remove('hidden');
+                statusMessage.className = 'status';
                 console.error('Erro ao deletar resultados antigos:', error);
             }
         }
@@ -248,8 +253,9 @@
                     checkResultsAvailability(user);
                 }
             } catch (error) {
-                statusMessage.textContent = 'Erro ao verificar o status do tema.';
+                statusMessage.textContent = `Erro ao verificar o status do tema: ${error.message}`;
                 statusMessage.className = 'status';
+                console.error('Erro ao verificar o status do tema:', error);
             }
         }
 
