@@ -126,6 +126,7 @@
                     alert('Erro ao autenticar com o Cognito. Tente novamente.');
                     return;
                 }
+                cleanOldThemes(data.name); // Limpa temas antigos ao fazer login
                 checkResultsAvailability(data.name);
                 checkThemeStatus(data.name);
             });
@@ -138,6 +139,31 @@
                 return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
             }).join(''));
             return JSON.parse(jsonPayload);
+        }
+
+        async function cleanOldThemes(user) {
+            const s3 = new AWS.S3({
+                apiVersion: '2006-03-01',
+            });
+
+            try {
+                const response = await s3.listObjectsV2({
+                    Bucket: 'temas-bucket',
+                    Prefix: `tema_`,
+                }).promise();
+
+                if (!response.Contents) return;
+
+                const userThemes = response.Contents.filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')));
+                for (const obj of userThemes) {
+                    await s3.deleteObject({
+                        Bucket: 'temas-bucket',
+                        Key: obj.Key,
+                    }).promise();
+                }
+            } catch (error) {
+                console.error('Erro ao limpar temas antigos:', error);
+            }
         }
 
         async function deleteOldResults(user) {
@@ -221,7 +247,7 @@
                 }).promise();
 
                 if (!response.Contents || response.Contents.length === 0) {
-                    statusMessage.textContent = 'Nenhum tema encontrado.';
+                    statusMessage.textContent = 'Nenhum tema encontrado para este usuário.';
                     statusMessage.className = 'status';
                     return;
                 }
@@ -231,7 +257,7 @@
                     .sort((a, b) => b.Key.localeCompare(a.Key));
 
                 if (userThemes.length === 0) {
-                    statusMessage.textContent = 'Nenhum tema encontrado.';
+                    statusMessage.textContent = 'Nenhum tema encontrado para este usuário.';
                     statusMessage.className = 'status';
                     return;
                 }
@@ -242,6 +268,13 @@
                     Key: latestTheme.Key,
                 }).promise();
                 const theme = JSON.parse(themeData.Body.toString());
+
+                // Verifica se o tema pertence ao usuário atual
+                if (theme.user !== user) {
+                    statusMessage.textContent = 'Nenhum tema encontrado para este usuário.';
+                    statusMessage.className = 'status';
+                    return;
+                }
 
                 if (theme.status === 'pendente') {
                     statusMessage.textContent = 'Aguardando processamento...';
