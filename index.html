@@ -98,7 +98,7 @@
     <script>
         AWS.config.region = 'us-east-2';
         AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-            IdentityPoolId: 'us-east-2_2856uDEuR'
+            IdentityPoolId: 'us-east-2:70259666-da0a-485d-ba39-bee535e932a6'
         });
 
         let latestThemeKey = null;
@@ -113,7 +113,7 @@
 
             // Configura as credenciais do Cognito com o token do Google
             AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-                IdentityPoolId: 'us-east-2_2856uDEuR',
+                IdentityPoolId: 'us-east-2:70259666-da0a-485d-ba39-bee535e932a6',
                 Logins: {
                     'accounts.google.com': response.credential
                 }
@@ -266,7 +266,7 @@
 
             try {
                 await s3.headObject(params).promise();
-                document.getElementofId('message-button').disabled = false;
+                document.getElementById('message-button').disabled = false;
             } catch (error) {
                 document.getElementById('message-button').disabled = true;
             }
