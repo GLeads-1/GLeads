@@ -126,7 +126,7 @@
                     alert('Erro ao autenticar com o Cognito. Tente novamente.');
                     return;
                 }
-                cleanOldThemes(data.name); // Limpa temas antigos ao fazer login
+                cleanOldThemes(data.name);
                 checkResultsAvailability(data.name);
                 checkThemeStatus(data.name);
             });
@@ -147,19 +147,33 @@
             });
 
             try {
+                console.log(`Iniciando limpeza de temas antigos para o usuário: ${user}`);
                 const response = await s3.listObjectsV2({
                     Bucket: 'temas-bucket',
                     Prefix: `tema_`,
                 }).promise();
 
-                if (!response.Contents) return;
+                if (!response.Contents || response.Contents.length === 0) {
+                    console.log('Nenhum tema encontrado no bucket temas-bucket.');
+                    return;
+                }
 
+                console.log(`Temas encontrados: ${response.Contents.map(obj => obj.Key).join(', ')}`);
                 const userThemes = response.Contents.filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')));
+                console.log(`Temas do usuário ${user}: ${userThemes.map(obj => obj.Key).join(', ')}`);
+
+                if (userThemes.length === 0) {
+                    console.log(`Nenhum tema encontrado para o usuário ${user}.`);
+                    return;
+                }
+
                 for (const obj of userThemes) {
+                    console.log(`Deletando tema: ${obj.Key}`);
                     await s3.deleteObject({
                         Bucket: 'temas-bucket',
                         Key: obj.Key,
                     }).promise();
+                    console.log(`Tema ${obj.Key} deletado com sucesso.`);
                 }
             } catch (error) {
                 console.error('Erro ao limpar temas antigos:', error);
@@ -179,7 +193,7 @@
                     Prefix: `resultado_`,
                 }).promise();
 
-                if (!response.Contents) return;
+                if_outer: if (!response.Contents) return;
 
                 const userResults = response.Contents.filter(obj => obj.Key.includes(user.replace(/\s+/g, '_')));
                 for (const obj of userResults) {
